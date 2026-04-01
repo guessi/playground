@@ -31,12 +31,22 @@ echo ">>> Deleting scaling policies and alarms..."
 aws cloudwatch delete-alarms \
   --alarm-names "${APP_NAME}-cpu-high" "${APP_NAME}-cpu-low" \
   --region "$REGION" 2>/dev/null || true
-aws autoscaling delete-policy \
-  --auto-scaling-group-name "$ASG_NAME" --policy-name "${APP_NAME}-scale-up" \
-  --region "$REGION" 2>/dev/null || true
-aws autoscaling delete-policy \
-  --auto-scaling-group-name "$ASG_NAME" --policy-name "${APP_NAME}-scale-down" \
-  --region "$REGION" 2>/dev/null || true
+
+# Resolve actual ASG name (may differ from ASG_NAME after Blue/Green deployments)
+CURRENT_ASG=$(aws deploy get-deployment-group \
+  --application-name "$APP_NAME" --deployment-group-name "$DG_NAME" \
+  --region "$REGION" \
+  --query "deploymentGroupInfo.autoScalingGroups[0].name" --output text 2>/dev/null) || true
+
+for asg_name in "$ASG_NAME" "$CURRENT_ASG"; do
+  [ -z "$asg_name" ] || [ "$asg_name" = "None" ] && continue
+  aws autoscaling delete-policy \
+    --auto-scaling-group-name "$asg_name" --policy-name "${APP_NAME}-scale-up" \
+    --region "$REGION" 2>/dev/null || true
+  aws autoscaling delete-policy \
+    --auto-scaling-group-name "$asg_name" --policy-name "${APP_NAME}-scale-down" \
+    --region "$REGION" 2>/dev/null || true
+done
 
 # ============================================================
 # 3. ASG + Launch Template
